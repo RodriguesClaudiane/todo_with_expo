@@ -66,7 +66,9 @@ export default function TaskListScreen() {
       />
 
       <View style={styles.filters}>
-        <SegmentedControl options={STATUS_OPTIONS} value={status} onChange={setStatus} />
+        <View style={styles.segmented}>
+          <SegmentedControl options={STATUS_OPTIONS} value={status} onChange={setStatus} />
+        </View>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -138,6 +140,9 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
+  },
+  segmented: {
+    paddingHorizontal: Spacing.three,
   },
   chips: {
     gap: Spacing.two,

@@ -341,3 +341,63 @@ Needs testing (builds, typechecks and lints; runtime still to be verified on a d
 ### Current Status
 
 Partially completed. The app runs in Expo Go; reminders need a development build, which is the next step.
+
+---
+
+## Entry 7 — Functional test of the UI flows on the device (Expo Go) and two UI fixes
+
+### Prompt / Request
+
+Continuation of "tente novamente" (§19 Validation: test the important user flows).
+
+### Decision Summary
+
+- Drove the app on the physical device through `adb`. Elements were found by text with `uiautomator dump` and tapped with `input tap`; text was typed with `input text`; screenshots were taken only while the app was in the foreground. Every result below was read from the screen and not assumed.
+- Fixed the two UI problems the test revealed (see Problems).
+
+### Actions Performed
+
+Flows tested in Expo Go on the POCO M8 5G (Android 16):
+
+| # | Flow | Observed result |
+|---|---|---|
+| 1 | Create task "Buy groceries", category Shopping, no due date | Saved, shown in the list as "Pending · Shopping" |
+| 2 | Save with an empty title | Inline error "Title is required."; nothing saved |
+| 3 | Create "Submit mobile assignment", Work, "Add due date" (defaults to next full hour, 16:00), change the time to 17:00 in the native Android time dialog | Button changed to "🕒 17:00"; list shows "⏰ qui., 8 de out., 17:00" (device locale pt-BR) |
+| 4 | Saving that task in Expo Go | Alert "Reminders unavailable… use a development build"; the task was still saved |
+| 5 | Mark "Buy groceries" as completed using the checkbox | Row shows "Completed" with the title struck through |
+| 6 | Filters: Completed / Pending / All + Shopping / Pending + Shopping | Only the completed task / only the pending task / the Shopping task / "No tasks here", all correct |
+| 7 | Mark the completed task as pending again | Shows "Pending" again |
+| 8 | Edit the task: title → "Buy groceries and fruit", description "milk, eggs" | List updated after returning |
+| 9 | **Persistence:** `am force-stop` Expo Go, open the app again | Both tasks still there; the edited description "milk, eggs" was loaded into the form |
+| 10 | Categories: create "Health" | Appears with "0 tasks" |
+| 11 | Create "work" (Work already exists) | Alert "A category named "work" already exists." |
+| 12 | Rename "Health" → "Fitness" | Renamed in the list and in the filter chips |
+| 13 | Delete a category that has 1 task (Shopping) | Confirmation: "1 task will become uncategorized. The tasks themselves are kept."; afterwards the task has no category and the Shopping chip is gone from the list filters |
+| 14 | Delete task from the editor | Confirmation "… will be deleted permanently."; the task is removed from the list |
+
+Code changes after the test:
+- `src/app/index.tsx`: horizontal padding around the status segmented control.
+- `src/services/notifications.ts`: export `remindersSupported`. `src/components/due-date-field.tsx`: shows "Reminders are not available in this environment" instead of promising a reminder when reminders cannot work.
+
+### Result
+
+All the flows listed work on the device. `tsc` and `lint` pass after the fixes, and the change was confirmed on the device through Fast Refresh.
+
+### Problems / Errors
+
+1. The status segmented control (All/Pending/Completed) touched both screen edges: the filter container had no horizontal padding, unlike the chip row.
+2. In Expo Go on Android the due date hint said "You will get a reminder at this time", although reminders are not supported there. The text promised something the app could not do.
+3. Testing-only notes (not app bugs):
+   - Expo Go's floating "gear" button overlaps the "Categories" header link; I tapped its left part instead.
+   - In the uiautomator dump each button appears twice (as content-desc and as text), so my index-based tap deleted "Shopping" instead of "Work". It still tested the same behaviour: a category used by one task.
+   - On the editor, the Delete button was at the bottom edge until the form was scrolled; this is scroll position, not a layout bug.
+
+### Fixes Attempted
+
+1. Wrapped the control in a view with `paddingHorizontal: Spacing.three`. Fixed (screenshot confirmed).
+2. A hint that depends on `remindersSupported`. Fixed.
+
+### Current Status
+
+Completed (CRUD, filters, categories, persistence verified on the device). Reminders: needs testing in a development build.

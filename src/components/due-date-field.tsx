@@ -5,6 +5,7 @@ import { Button } from '@/components/button';
 import { Spacing } from '@/constants/theme';
 import { useNow } from '@/hooks/use-now';
 import { useTheme } from '@/hooks/use-theme';
+import { remindersSupported } from '@/services/notifications';
 import { formatDate, formatTime, nextFullHour, withDate, withTime } from '@/lib/dates';
 
 type Props = {
@@ -79,7 +80,11 @@ export function DueDateField({ value, onChange }: Props) {
         </Text>
       )}
 
-      {isPast ? (
+      {!remindersSupported ? (
+        <Text style={[styles.hint, { color: theme.textSecondary }]}>
+          Reminders are not available in this environment (Expo Go on Android).
+        </Text>
+      ) : isPast ? (
         <Text style={[styles.hint, { color: theme.danger }]}>
           This time is in the past, so no reminder will be scheduled.
         </Text>

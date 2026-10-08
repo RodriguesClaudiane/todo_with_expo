@@ -20,7 +20,8 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.SCHEDULE_EXACT_ALARM"
-      ]
+      ],
+      "package": "com.anonymous.todowithexpo"
     },
     "web": {
       "output": "static",

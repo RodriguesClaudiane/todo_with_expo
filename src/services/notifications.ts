@@ -12,12 +12,12 @@ export type PermissionResult = 'granted' | 'denied' | 'blocked' | 'unsupported';
  * effect calls a guard that throws since SDK 53), which would crash the app.
  * Reminders need a development build there; everything else keeps working.
  */
-const supported = Platform.OS !== 'web' && !(Platform.OS === 'android' && isRunningInExpoGo());
+export const remindersSupported = Platform.OS !== 'web' && !(Platform.OS === 'android' && isRunningInExpoGo());
 
 let notificationsModule: typeof NotificationsModule | null = null;
 
 function getNotifications() {
-  if (!supported) return null;
+  if (!remindersSupported) return null;
   if (!notificationsModule) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     notificationsModule = require('expo-notifications') as typeof NotificationsModule;
