@@ -93,3 +93,60 @@ N/A
 ### Current Status
 
 Completed
+
+---
+
+## Entry 3 — Data models, SQLite schema and repositories
+
+### Prompt / Request
+
+Continuation of the `expec.md` implementation (§3 Task model, §4 Category model, §5 SQLite persistence, §12 Filtering).
+
+### Decision Summary
+
+- **SQLite approach:** `expo-sqlite` with plain SQL in small repository modules (`src/db/tasks.ts`, `src/db/categories.ts`). Each function takes the `SQLiteDatabase` as its first argument. No ORM: there are only two tables, and plain SQL is easy to read in an educational project. Considered Drizzle ORM and rejected it, because it adds a build step, migrations tooling and a new dependency for very little gain here.
+- **Schema versioning:** `PRAGMA user_version` with numbered steps in `migrateDbIfNeeded` (the pattern from the SDK 57 expo-sqlite docs). It runs from `SQLiteProvider`'s `onInit` before any screen renders.
+- **Dates:** stored as INTEGER epoch milliseconds (`due_date_time`, `created_at`, `updated_at`), so sorting and comparisons happen directly in SQL and there are no timezone parsing problems. The UI formats them in the device locale.
+- **Task fields** (spec fields plus extras):
+  - `id` INTEGER PRIMARY KEY AUTOINCREMENT
+  - `title` TEXT NOT NULL, with a CHECK that it is non-blank
+  - `description` TEXT, defaults to `''`
+  - `completed` INTEGER 0/1
+  - `due_date_time` INTEGER, nullable
+  - `created_at` INTEGER
+  - `category_id`: nullable foreign key to `categories(id)` with `ON DELETE SET NULL`
+  - **Extra fields:** `updated_at` (last modification time) and `notification_id` (the identifier returned by expo-notifications for the task's pending reminder, used to cancel or replace it).
+- **Category fields:** `id`, `name` (UNIQUE, case-insensitive, non-blank), plus the extras `color` (hex string shown as a dot or chip in the UI) and `created_at`. Four categories are seeded on first run: Personal, Work, Study, Shopping.
+- **Category deletion strategy: tasks become uncategorized.** Implemented two ways: the foreign key uses `ON DELETE SET NULL` (with `PRAGMA foreign_keys = ON`, which SQLite requires on every connection), and `deleteCategory` also runs an explicit `UPDATE ... SET category_id = NULL` in the same transaction, so the behaviour does not depend on the pragma. `deleteCategory` returns the number of affected tasks so the UI can warn the user before deleting. I chose this over blocking the deletion, because the user loses no tasks and it needs the fewest steps.
+- **Filtering approach: in SQL.** `listTasks(db, { status, category })` builds a parameterised `WHERE` clause. `category` can be `'all'`, `'none'` (only uncategorized tasks; an extra filter beyond the spec) or a category id. Sort order: pending first, then by due date (tasks without a date last), then newest first.
+- **Validation:** `validateTaskInput` trims the title and description, requires a title (max 120 characters) and rejects non-finite due dates. It throws a `ValidationError` whose message is safe to show to the user. Duplicate category names are turned into a `ValidationError` instead of a raw SQLite UNIQUE error.
+- **Testing without a device:** wrote `scripts/db-smoke-test.mjs`. It transpiles `src/db/*.ts` with the project's TypeScript and runs the real SQL against Node 24's built-in `node:sqlite`, through a small adapter that mimics the expo-sqlite methods the app uses. For that reason `src/db` uses relative imports only (no `@/` alias).
+
+### Actions Performed
+
+- Created `src/db/models.ts`, `src/db/schema.ts`, `src/db/tasks.ts`, `src/db/categories.ts`.
+- Created `scripts/db-smoke-test.mjs` and added `pnpm test:db` to `package.json`.
+
+### Result
+
+`node scripts/db-smoke-test.mjs`: **15 checks passed**. They cover:
+- migration and seed data, and that running it twice changes nothing;
+- create, edit, delete, complete and reopen;
+- title validation;
+- status, category and combined filters;
+- storing the notification id;
+- category create, duplicate name, rename and task counts;
+- deleting a category leaves its tasks uncategorized (both the explicit update and the FK cascade);
+- data still present after closing and reopening the database file.
+
+### Problems / Errors
+
+None in this step. Note: `node:sqlite` prints an "experimental feature" warning on Node 24. The npm script hides it with `--no-warnings`.
+
+### Fixes Attempted
+
+N/A
+
+### Current Status
+
+Completed (verified by the smoke test; still needs on-device verification with expo-sqlite)
