@@ -49,3 +49,47 @@ Plan defined; no app code changed yet.
 ### Current Status
 
 Completed
+
+---
+
+## Entry 2 — Dependencies
+
+### Prompt / Request
+
+Continuation of the `expec.md` implementation (§17 Dependencies, §5 SQLite, §10 Local notifications).
+
+### Decision Summary
+
+Installed with `npx expo install`, as `AGENTS.md` requires, so the versions match SDK 57:
+
+| Dependency | Version | Purpose | Why this one |
+|---|---|---|---|
+| `expo-sqlite` | ~57.0.4 | Local SQLite persistence for tasks and categories | Official Expo module. Async API (`runAsync`, `getAllAsync`, `withTransactionAsync`), `SQLiteProvider` with an `onInit` hook for migrations. Works in Expo Go. |
+| `expo-notifications` | ~57.0.22 | Scheduled local reminders | Official Expo module. Supports `DATE` triggers and returns an identifier that can be stored and cancelled. No push server needed. The SDK 57 docs say local notifications still work in Expo Go. |
+| `@react-native-community/datetimepicker` | 9.1.0 | Native date and time pickers | The picker the SDK 57 docs recommend. Included in Expo Go. `@expo/ui` also has a drop-in picker, but the community picker is the more widely documented option. |
+
+Config changes in `app.json`:
+- Added the `expo-notifications` config plugin. `npx expo install` only auto-added the `expo-sqlite` and datetimepicker plugins.
+- Added `android.permission.SCHEDULE_EXACT_ALARM`. I read the expo-notifications Android source (`ExpoSchedulingDelegate.kt`): it uses exact alarms only when `canScheduleExactAlarms()` is true and otherwise falls back to `setAndAllowWhileIdle`. Without the permission reminders still fire, but may be a few minutes late. This only matters for development/production builds; Expo Go uses its own manifest. The library already declares `RECEIVE_BOOT_COMPLETED` and `POST_NOTIFICATIONS`, so scheduled reminders survive a device reboot.
+- Renamed the display name to "To-Do".
+
+### Actions Performed
+
+- `npx expo install expo-sqlite expo-notifications @react-native-community/datetimepicker`
+- Edited `app.json` (plugins, Android permission, name).
+
+### Result
+
+Install succeeded (pnpm, 6 packages added).
+
+### Problems / Errors
+
+None.
+
+### Fixes Attempted
+
+N/A
+
+### Current Status
+
+Completed
