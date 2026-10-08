@@ -36,6 +36,14 @@ export function explainReminderOutcome(outcome: ReminderOutcome) {
           : undefined
       );
       return;
+    case 'unsupported':
+      if (permissionWarningShown) return;
+      permissionWarningShown = true;
+      Alert.alert(
+        'Reminders unavailable',
+        'The task was saved. Scheduled reminders are not available in this environment (Expo Go on Android) — use a development build to get notifications.'
+      );
+      return;
     case 'error':
       Alert.alert('Reminder not scheduled', 'The task was saved, but the reminder could not be scheduled.');
       return;

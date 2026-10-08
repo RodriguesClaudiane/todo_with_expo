@@ -1,15 +1,36 @@
-import * as Notifications from 'expo-notifications';
+import { isRunningInExpoGo } from 'expo';
+import type * as NotificationsModule from 'expo-notifications';
 import { Platform } from 'react-native';
 
 const REMINDER_CHANNEL_ID = 'task-reminders';
 
 export type PermissionResult = 'granted' | 'denied' | 'blocked' | 'unsupported';
 
+/**
+ * expo-notifications is loaded lazily. Importing its entry point inside Expo Go
+ * on Android throws at module load (its push-token auto-registration side
+ * effect calls a guard that throws since SDK 53), which would crash the app.
+ * Reminders need a development build there; everything else keeps working.
+ */
+const supported = Platform.OS !== 'web' && !(Platform.OS === 'android' && isRunningInExpoGo());
+
+let notificationsModule: typeof NotificationsModule | null = null;
+
+function getNotifications() {
+  if (!supported) return null;
+  if (!notificationsModule) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    notificationsModule = require('expo-notifications') as typeof NotificationsModule;
+  }
+  return notificationsModule;
+}
+
 let channelReady: Promise<void> = Promise.resolve();
 
 /** Called once at startup (module scope of the root layout). */
 export function configureNotifications() {
-  if (Platform.OS === 'web') return;
+  const Notifications = getNotifications();
+  if (!Notifications) return;
 
   // Without a handler, notifications that arrive while the app is open are not shown.
   Notifications.setNotificationHandler({
@@ -37,15 +58,16 @@ export function configureNotifications() {
  * Never throws: any failure is reported as 'denied'.
  */
 export async function ensureNotificationPermission(): Promise<PermissionResult> {
-  if (Platform.OS === 'web') return 'unsupported';
+  const Notifications = getNotifications();
+  if (!Notifications) return 'unsupported';
   try {
     await channelReady;
     const current = await Notifications.getPermissionsAsync();
-    if (isGranted(current)) return 'granted';
+    if (isGranted(Notifications, current)) return 'granted';
     if (!current.canAskAgain) return 'blocked';
 
     const requested = await Notifications.requestPermissionsAsync();
-    if (isGranted(requested)) return 'granted';
+    if (isGranted(Notifications, requested)) return 'granted';
     return requested.canAskAgain ? 'denied' : 'blocked';
   } catch (error) {
     console.warn('Notification permission check failed', error);
@@ -53,7 +75,10 @@ export async function ensureNotificationPermission(): Promise<PermissionResult> 
   }
 }
 
-function isGranted(status: Notifications.NotificationPermissionsStatus) {
+function isGranted(
+  Notifications: typeof NotificationsModule,
+  status: NotificationsModule.NotificationPermissionsStatus
+) {
   return (
     status.granted ||
     status.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL ||
@@ -62,6 +87,8 @@ function isGranted(status: Notifications.NotificationPermissionsStatus) {
 }
 
 export async function scheduleTaskReminder(task: { id: number; title: string; dueDateTime: number }) {
+  const Notifications = getNotifications();
+  if (!Notifications) throw new Error('Notifications are not supported here');
   return Notifications.scheduleNotificationAsync({
     content: {
       title: 'Task reminder',
@@ -78,7 +105,8 @@ export async function scheduleTaskReminder(task: { id: number; title: string; du
 
 /** Cancelling an id that already fired or no longer exists is harmless; errors are logged only. */
 export async function cancelTaskReminder(notificationId: string) {
-  if (Platform.OS === 'web') return;
+  const Notifications = getNotifications();
+  if (!Notifications) return;
   try {
     await Notifications.cancelScheduledNotificationAsync(notificationId);
   } catch (error) {

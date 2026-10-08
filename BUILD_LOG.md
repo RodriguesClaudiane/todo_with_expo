@@ -292,3 +292,52 @@ Continuation of the `expec.md` implementation (§6 Required screens, §7 Navigat
 ### Current Status
 
 Needs testing (builds, typechecks and lints; runtime still to be verified on a device)
+
+---
+
+## Entry 6 — First run on a physical device: networking issue and Expo Go crash in expo-notifications
+
+### Prompt / Request
+
+> "tente novamente" (after the first on-device test attempt was postponed because the phone was in use)
+
+### Decision Summary
+
+- Test on the physical Android device (POCO M8 5G, Android 16) with Expo Go 57.0.9. I control it through the Windows `adb.exe`: `adb reverse tcp:8081`, `input tap`, and `screencap` only while Expo Go is the foreground app.
+- **Correction of an earlier assumption (Entry 2):** I wrote, based on the SDK 57 docs, that "local notifications still work in Expo Go". On Android this is **wrong for this setup**. Merely importing `expo-notifications` crashes the app in Expo Go. I traced it in the library source:
+  - `build/index.js` imports `DevicePushTokenAutoRegistration.fx.js`.
+  - That module calls `addPushTokenListener()` at module load.
+  - `addPushTokenListener()` calls `warnOfExpoGoPushUsage()`, which **throws** on Android when `isRunningInExpoGo()` is true.
+- **Decision:**
+  1. Make the app robust. `src/services/notifications.ts` now loads `expo-notifications` lazily with `require()`, and only when it is supported (not web, and not Expo Go on Android). Otherwise every notification function reports `unsupported` or does nothing. Tasks, due dates and everything else keep working; when a reminder would be needed, the user sees "Reminders unavailable… use a development build" once per session.
+  2. Test the reminders in a **development build** (`expo prebuild` + Gradle), which is what `AGENTS.md` recommends for native modules. See the following entries.
+  - Considered importing internal files such as `expo-notifications/build/scheduleNotificationAsync` directly to bypass the side effect. Rejected: it relies on private package paths that can change in any release.
+
+### Actions Performed
+
+- Rewrote `src/services/notifications.ts`: lazy `require`, a `supported` flag based on `isRunningInExpoGo()`, and a type-only import for the types.
+- `src/lib/errors.ts`: added the message for the `unsupported` outcome.
+- Development environment: a temporary TCP proxy on Windows (outside the repository, see below).
+
+### Result
+
+- The app now starts on the device in Expo Go. The Task List renders. The migration ran: the 4 seeded categories appear as filter chips (Personal, Shopping, …). The empty state says "No tasks here".
+- `tsc` and `expo lint` pass.
+
+### Problems / Errors
+
+1. Expo Go: `Uncaught Error: java.io.IOException: Failed to download remote update`. On the phone, `curl http://127.0.0.1:8081/status` returned exit code 52 (empty reply). Cause: with WSL2 in NAT mode, `wslrelay.exe` exposes Metro only on `[::1]:8081` (IPv6). `adb reverse` connects to `127.0.0.1:8081` (IPv4) on Windows, where nothing was listening.
+2. Expo Go stayed on its error screen after "Reload". Only a force-stop helped.
+3. Metro log, after the bundle loaded: `ERROR [Error: expo-notifications: Android Push notifications (remote notifications) functionality provided by expo-notifications was removed from Expo Go with the release of SDK 53...]`, at `src/services/notifications.ts:1` (the import). It was followed by `WARN Route "./_layout.tsx" is missing the required default export` (a consequence of the module failing to evaluate).
+4. Restarting Metro with `pkill -f "expo start"` killed the shell that ran the command itself (exit 144), because its own command line matched the pattern.
+
+### Fixes Attempted
+
+1. Wrote a small PowerShell TCP proxy (`127.0.0.1:8081` → `[::1]:8081`) and ran it on Windows, kept outside the repo because it is specific to this machine. After that, the phone's `curl` returned `packager-status:running`. (Alternatives that need admin rights: `netsh interface portproxy`, or WSL mirrored networking.)
+2. `adb shell am force-stop host.exp.exponent`, then opened `exp://127.0.0.1:8081` again.
+3. Lazy loading of expo-notifications, as described above. Fixed.
+4. Started Metro again in a separate background command.
+
+### Current Status
+
+Partially completed. The app runs in Expo Go; reminders need a development build, which is the next step.
