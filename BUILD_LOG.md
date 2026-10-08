@@ -150,3 +150,63 @@ N/A
 ### Current Status
 
 Completed (verified by the smoke test; still needs on-device verification with expo-sqlite)
+
+---
+
+## Entry 4 — Notification service and task service (reminder sync)
+
+### Prompt / Request
+
+Continuation of the `expec.md` implementation (§8 Task operations, §9 Due dates, §10 Local notifications, §11 Notification permissions).
+
+### Decision Summary
+
+- **`src/services/notifications.ts`** is a thin wrapper over expo-notifications:
+  - `configureNotifications()`: sets the foreground handler (`shouldShowBanner`/`shouldShowList`/`shouldPlaySound`, the SDK 57 field names; `shouldShowAlert` is deprecated). On Android it also creates a `task-reminders` channel with HIGH importance. It is called once, at module scope, from the root layout.
+  - `scheduleTaskReminder()`: uses a `SchedulableTriggerInputTypes.DATE` trigger with the channel id. Title is "Task reminder", body is the task title, and `data.taskId` is included.
+  - `cancelTaskReminder()`: wraps `cancelScheduledNotificationAsync`. Errors are only logged, because cancelling an id that has already fired is harmless.
+- **Notification strategy:** each task stores the identifier of its pending reminder in `tasks.notification_id`. One function, `syncReminder(db, task)` in `src/services/task-service.ts`, handles every case:
+  1. It always cancels the stored reminder first.
+  2. It schedules a new reminder only if the task is **pending** and `dueDateTime` is **in the future**.
+  3. It stores the new id, or `NULL`.
+
+  This covers every case in spec §10 with one code path:
+
+  | Case | What happens |
+  |---|---|
+  | Created with a future date | Scheduled |
+  | Due date changed | Old reminder cancelled, new one scheduled |
+  | Due date removed | Cancelled |
+  | Completed | Cancelled |
+  | Reopened with a date still in the future | Scheduled again |
+  | Deleted | `removeTask` cancels the reminder before deleting the row |
+
+  Editing other fields (for example the title) also reschedules, so the notification text always matches the current title.
+- **Screens call the services, not the repositories:** `saveTask`, `setCompleted` and `removeTask` combine the database change with the reminder sync, so screens cannot forget to update notifications.
+- **Permission strategy:**
+  - Permission is asked **in context**: only the first time a task actually needs a reminder, not when the app starts. The user then understands why the prompt appears.
+  - `ensureNotificationPermission()` checks the current status first and asks only if `canAskAgain`. It never throws. It returns `granted`, `denied`, `blocked` (the OS will not show the prompt again) or `unsupported` (web).
+  - On iOS, `PROVISIONAL`/`EPHEMERAL` authorization is treated as granted.
+  - On Android the code waits for the channel to be created before asking, because Android 13+ only shows the prompt once a channel exists.
+  - **If permission is denied, the task is still saved.** The service returns a `ReminderOutcome`, so the UI can explain that no reminder was scheduled.
+- **Due date in the past:** this is allowed (a task can be overdue). The outcome is `past` and no reminder is scheduled.
+
+### Actions Performed
+
+- Created `src/services/notifications.ts` and `src/services/task-service.ts`.
+
+### Result
+
+`npx tsc --noEmit` passes. Runtime behaviour must still be tested on a device.
+
+### Problems / Errors
+
+None so far.
+
+### Fixes Attempted
+
+N/A
+
+### Current Status
+
+Needs testing
