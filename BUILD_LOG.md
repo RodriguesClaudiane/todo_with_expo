@@ -401,3 +401,69 @@ All the flows listed work on the device. `tsc` and `lint` pass after the fixes, 
 ### Current Status
 
 Completed (CRUD, filters, categories, persistence verified on the device). Reminders: needs testing in a development build.
+
+---
+
+## Entry 8 — Development build and on-device verification of local notifications
+
+### Prompt / Request
+
+> "continue de onde parou" (the previous session ended in the middle of the Gradle build)
+
+### Decision Summary
+
+- Reminders cannot run in Expo Go on Android (Entry 6), so I built a **development (debug) build** of the app locally:
+  - `npx expo prebuild -p android`. `android/` is generated and git-ignored (Continuous Native Generation). Prebuild also added `android.package: "com.anonymous.todowithexpo"` to `app.json`; that change went into the previous commit.
+  - `./gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a`, only the device's ABI, to save build time.
+  - I did not add `expo-dev-client`: a plain debug build already loads the JS from Metro on `localhost:8081` through `adb reverse`, which is enough here.
+- Installed the APK with the Windows `adb.exe` (`adb install -r`).
+- I verified notifications without opening the user's notification shade (which shows other apps' private notifications):
+  - `dumpsys alarm` shows the scheduled expo-notifications alarm (`origWhen`) for the app;
+  - `dumpsys notification --noredact` shows the notifications the app has posted.
+- Permission denial was tested through the real system prompt. Granting afterwards was done with `adb shell pm grant … POST_NOTIFICATIONS`, which is equivalent to the user enabling it in Settings.
+
+### Actions Performed
+
+- Generated the native project and built `app-debug.apk` (84 MB, debug, arm64). Installed it on the POCO M8 5G.
+- Notification tests. "alarms" = number of pending expo-notifications alarms for the app:
+
+| # | Action | Expected | Observed |
+|---|---|---|---|
+| 1 | First save of a task with a future due date (20:10) | Permission prompt appears | Android prompt "Permitir que o app To-Do envie notificações?" |
+| 2 | Tap "Não permitir" (deny) | Task saved, user told, no crash | Alert "Reminders are off — The task was saved, but notifications are not allowed…"; task in the list |
+| 3 | Permission granted; edit the due time to 20:11 and save | 1 alarm at 20:11 | `origWhen=2026-10-09 20:11:00` |
+| 4 | Wait | Notification posted | Posted at 20:12:00: `android.title=Task reminder`, `android.text=Notification test`, channel `task-reminders`, importance 4 (HIGH) |
+| 5 | New task, due 21:00 | 1 alarm | 1 alarm at 21:00 |
+| 6 | Mark completed (checkbox) | Cancelled | 0 alarms |
+| 7 | Mark pending again (still in the future) | Rescheduled | 1 alarm at 21:00 |
+| 8 | Change the due time to 22:30 | Old cancelled, new scheduled | 1 alarm at 22:30 (not 2) |
+| 9 | Remove the due date | Cancelled | 0 alarms; row shows no date |
+| 10 | Add the due date again (21:00) | Scheduled | 1 alarm at 21:00 |
+| 11 | Delete the task | Cancelled | 0 alarms |
+| 12 | Task with a reminder → HOME → `am kill` the process → open the app | Alarm kept, data kept | 1 alarm at 21:00 after the kill; task list loaded again from SQLite |
+| 13 | Overdue pending task in the list | Shows "Overdue" | "Overdue · sex., 9 de out., 20:11" |
+
+- Afterwards I deleted the test tasks (0 alarms left), so the user does not get test reminders.
+
+### Result
+
+- `BUILD SUCCESSFUL in 18m 29s`.
+- All local-notification behaviours from spec §10 and §11 were verified on a real device.
+
+### Problems / Errors
+
+1. The previous session ended while Gradle was running. The next build failed in `:app:checkDebugDuplicateClasses` with dozens of `Could not read workspace metadata from ~/.gradle/caches/9.3.1/transforms/<hash>/metadata.bin`. 87 transform cache entries had `metadata.bin` and `results.bin` of **0 bytes**, written when the process was interrupted.
+2. The reminder fired at **20:12:00, not 20:11:00**. `dumpsys alarm` showed `window=+1m0s` for the alarm, and `appops get … SCHEDULE_EXACT_ALARM` returned "default". On Android 14+ this permission is not granted automatically to normal apps, so expo-notifications falls back to an inexact `setAndAllowWhileIdle` alarm (the code path seen in Entry 2).
+3. Testing-only problem: a tap by index hit the wrong row, because the list is sorted by due date. I added a helper that taps the checkbox of the row matched by task title.
+4. Expected Android behaviour, noted here: `adb reverse` rules are lost when the adb server restarts; they were set again.
+
+### Fixes Attempted
+
+1. A first attempt removed entries *without* a `metadata.bin` file: 0 removed, because the files existed but were empty. Then I removed the entries whose `metadata.bin` was empty (87). The rebuild succeeded. Only regenerable cache entries were deleted.
+2. Not changed in code; documented as a known limitation. Options:
+   - The user can allow "Alarms & reminders" for the app in Android settings to get exact alarms.
+   - `USE_EXACT_ALARM` is restricted by Google Play policy to alarm-clock and calendar apps, so I did not use it.
+
+### Current Status
+
+Completed (notifications verified on a real device; delivery can be up to about a minute late unless exact alarms are allowed)
