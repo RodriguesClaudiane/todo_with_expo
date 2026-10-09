@@ -467,3 +467,93 @@ Completed (CRUD, filters, categories, persistence verified on the device). Remin
 ### Current Status
 
 Completed (notifications verified on a real device; delivery can be up to about a minute late unless exact alarms are allowed)
+
+---
+
+## Entry 9 — Final review
+
+### Prompt / Request
+
+> "continue de onde parou" (spec §21 Final review)
+
+### Decision Summary
+
+- Went through the acceptance criteria one by one. Each one is ticked only if it was observed on the device or by an automated check; the evidence column names the entry where it was observed.
+- Final cleanup:
+  - fixed the import order in `due-date-field.tsx`;
+  - replaced the template `README.md` with project-specific instructions, including the development-build requirement for reminders and the checks.
+
+### Actions Performed
+
+- Ran all the checks again: `npx tsc --noEmit` (OK), `npx expo lint` (OK), `pnpm test:db` (15 checks passed), `npx expo-doctor` (**21/21 checks passed. No issues detected!**).
+- Updated `README.md` and `src/components/due-date-field.tsx`.
+
+**Acceptance criteria (spec §20)**
+
+| Criterion | Status | Evidence |
+|---|---|---|
+| Application builds successfully | ✅ | Metro Android bundle (Entry 5); `assembleDebug` BUILD SUCCESSFUL (Entry 8) |
+| Application starts successfully | ✅ | Expo Go (Entry 6) and development build (Entry 8) on the POCO M8 5G |
+| Tasks can be created | ✅ | Entry 7 #1, #3 |
+| Tasks can be edited | ✅ | Entry 7 #8; Entry 8 #3, #8 |
+| Tasks can be deleted | ✅ | Entry 7 #14; Entry 8 #11 |
+| Tasks can be marked completed | ✅ | Entry 7 #5; Entry 8 #6 |
+| Completed tasks can become pending again | ✅ | Entry 7 #7; Entry 8 #7 |
+| Tasks persist in SQLite | ✅ | smoke test (Entry 3); force-stop + reopen (Entry 7 #9) |
+| Categories can be created | ✅ | Entry 7 #10 |
+| Categories can be renamed | ✅ | Entry 7 #12 |
+| Categories can be deleted | ✅ | Entry 7 #13 (tasks become uncategorized) |
+| Tasks can optionally belong to categories | ✅ | Entry 7 #1 (with category), Entry 8 (without) |
+| Status filtering works | ✅ | Entry 7 #6 |
+| Category filtering works | ✅ | Entry 7 #6 (including the combination with status) |
+| Navigation between required screens works | ✅ | List ↔ Editor ↔ Categories (Entry 7) |
+| Due dates can be assigned | ✅ | Entry 7 #3 (native time dialog), Entry 8 |
+| Local notifications can be scheduled | ✅ | Entry 8 #3, #4: notification delivered |
+| Notifications are updated if due dates change | ✅ | Entry 8 #8 |
+| Notifications are cancelled when tasks are deleted | ✅ | Entry 8 #11 |
+| Notifications are cancelled when tasks are completed | ✅ | Entry 8 #6 |
+| Notification permission is handled safely | ✅ | Entry 8 #1, #2 (denial: task saved, alert, no crash) |
+| Data remains available after restarting the app | ✅ | Entry 7 #9 (force-stop), Entry 8 #12 (process killed) |
+| `BUILD_LOG.md` contains the development history | ✅ | Entries 1–9 |
+
+### Result
+
+All acceptance criteria are met. Final summary:
+
+- **Architecture:** framework-native and layered, kept small.
+  - Expo Router screens in `src/app/`.
+  - Data layer in `src/db/`: plain-SQL repository functions plus migrations.
+  - `src/services/`: the notification wrapper, and a task service that combines each database change with the matching reminder change.
+  - Shared components and hooks.
+  - No ORM, no global store.
+- **Important dependencies:** `expo-sqlite`, `expo-notifications`, `@react-native-community/datetimepicker`. Dev-only: `eslint` and `eslint-config-expo`, added by `expo lint`.
+- **SQLite strategy:**
+  - `SQLiteProvider` with `onInit` migrations versioned by `PRAGMA user_version`.
+  - Two tables, `categories` and `tasks`, with a foreign key `ON DELETE SET NULL`.
+  - Dates stored as epoch milliseconds.
+  - Filtering done with SQL `WHERE` clauses.
+- **State management:** SQLite is the single source of truth. Screens keep local React state, which `useTasks` and `useCategories` reload when a screen gains focus or the filter changes, and after each action on the same screen.
+- **Navigation:** Expo Router stack (List → Editor `task/[id]`, List → Categories). Only the task id goes through the route; the editor reads the task from SQLite.
+- **Notifications:**
+  - A local `DATE` trigger per task. Its identifier is stored in `tasks.notification_id`.
+  - One `syncReminder` function always cancels the old reminder, then schedules a new one only for pending tasks due in the future.
+  - Permission is requested the first time a reminder is needed. If it is denied, the task is still saved and the user is told.
+
+### Problems / Errors
+
+**Known limitations:**
+1. In **Expo Go on Android**, reminders are not available (Entry 6). The app degrades gracefully and says so in the UI. A development or production build is required for reminders.
+2. On **Android 14+**, reminders can be **up to about a minute late** unless the user allows "Alarms & reminders" (exact alarms) for the app (Entry 8).
+3. Tapping a notification opens the app on the task list, not on that specific task. Deep-linking from `data.taskId` was not implemented.
+4. Tested on Android only (physical device). iOS code paths (compact pickers, iOS permission statuses) are implemented but **not tested**, because no iOS device or simulator was available.
+5. Web is not a target: there are no reminders and no native picker, and expo-sqlite web support is alpha and would need extra Metro configuration.
+
+**Remaining bugs:** none known.
+
+### Fixes Attempted
+
+N/A
+
+### Current Status
+
+Completed

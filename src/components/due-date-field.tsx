@@ -5,8 +5,8 @@ import { Button } from '@/components/button';
 import { Spacing } from '@/constants/theme';
 import { useNow } from '@/hooks/use-now';
 import { useTheme } from '@/hooks/use-theme';
-import { remindersSupported } from '@/services/notifications';
 import { formatDate, formatTime, nextFullHour, withDate, withTime } from '@/lib/dates';
+import { remindersSupported } from '@/services/notifications';
 
 type Props = {
   value: number | null;
