@@ -557,3 +557,66 @@ N/A
 ### Current Status
 
 Completed
+
+---
+
+## Entry 10 — Bug: reminder only appeared after opening the app (fixed with exact alarms)
+
+### Prompt / Request
+
+> "não notificou sem que eu abrisse o app"
+
+followed by
+
+> "funcionou" (the user's re-test after exact alarms were allowed for diagnosis)
+
+### Decision Summary
+
+- **Correction of Entries 8 and 9.** In Entry 8 the notification test was done with the app in the **foreground**, and I called the delay "up to about a minute" a known limitation. That conclusion was wrong for the real use case (app in the background). On this device the reminder was **held until the app was opened again**.
+- Investigation, read-only (`logcat`, `dumpsys`, and the app's SQLite file pulled with `run-as`):
+  - The user's task "TESTE" was due at **20:25:00** (notification id `652e0932…`).
+  - That notification was posted at **20:28:53**. The app had been launched from the home screen at 20:28:52.445, and AlarmManager delivered the alarm at 20:28:52.953, half a second later.
+  - The app process had been alive the whole time (PID 29797 since 20:16), so the alarm was not lost: the system **deferred** it.
+  - `appops`: `SCHEDULE_EXACT_ALARM: default` (not granted on Android 14+), so the alarm was inexact (`window=+1m0s` in Entry 8). `MIUIOP(10008): ignore` means MIUI autostart is off. At install, PowerKeeper removed the app from its "NoRestrictApps" list.
+  - Hypothesis: MIUI/HyperOS defers *inexact* alarms of background apps until they come to the foreground.
+- **Testing the hypothesis:** with `appops set … SCHEDULE_EXACT_ALARM allow`, the user repeated the test. "Teste 1", due 20:36:00, was delivered at 20:36:00.039 and posted at 20:36:00.312, with the app in the background. The system logged `not align this alarm` (exact alarms are not batched). Confirmed: inexact alarms caused the problem.
+- **Fix:** declare `android.permission.USE_EXACT_ALARM` in `app.json`. Android 13+ grants it at install, with no settings screen, so `canScheduleExactAlarms()` is true and expo-notifications uses `setExactAndAllowWhileIdle`. `SCHEDULE_EXACT_ALARM` stays for Android 12, where `USE_EXACT_ALARM` does not exist.
+  - Alternatives considered:
+    - (a) Keep only `SCHEDULE_EXACT_ALARM` and send the user to the "Alarms & reminders" settings page. It depends on the user finding the setting, and expo-notifications does not expose `canScheduleExactAlarms()` to JS, so it would need another native module.
+    - (b) Ask the user to enable MIUI autostart / "No restrictions". This is device-specific, and the test showed it is not needed once alarms are exact.
+  - Trade-off, documented in the README: Google Play only allows `USE_EXACT_ALARM` for alarm-clock and calendar apps. A Play Store release would have to use option (a).
+- Built a **release APK** this time (JS bundle embedded, no Metro needed). It behaves like a real app, which is the right setting for background behaviour. It is signed with the same debug keystore, so it installed over the debug build and kept the user's data.
+
+### Actions Performed
+
+- `app.json`: added `android.permission.USE_EXACT_ALARM`.
+- `README.md`: replaced the "up to about a minute late" note with the exact-alarm explanation and the Play policy caveat.
+- `npx expo prebuild -p android` (both permissions now in `AndroidManifest.xml`), then `./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a`.
+- Reset the diagnostic appop (`SCHEDULE_EXACT_ALARM default`), so the verification depends only on the new manifest. Then `adb install -r app-release.apk`.
+
+### Result
+
+- `BUILD SUCCESSFUL in 25m 32s`.
+- `dumpsys package`: `android.permission.USE_EXACT_ALARM: granted=true` right after install.
+- New reminder "Background test" due 21:06:00:
+  - `dumpsys alarm` showed `window=0 exactAllowReason=policy_permission` (previously `window=+1m0s`);
+  - I pressed HOME and did not touch the app again;
+  - AlarmManager delivered it at **21:06:00.052** and the notification was posted at **21:06:00.301**;
+  - no `START` of the app in the log, and the launcher stayed in the foreground.
+- `npx expo-doctor`: all checks passed.
+- I deleted the test task afterwards; the user's own tasks were kept.
+
+### Problems / Errors
+
+- Wrong test setup earlier: the "reminder fired" check in Entry 8 had the app in the foreground, so it missed the background-delivery problem that the user found.
+- The Windows `adb.exe` hung again (two processes; `adb devices` timed out). Killing it and starting the server again fixed it.
+- The first attempt to delete the test task did not open the editor: the tap was sent before the list had finished rendering after the app came back to the foreground. A second attempt worked.
+
+### Fixes Attempted
+
+- Diagnosis by granting exact alarms through appops: confirmed the cause.
+- `USE_EXACT_ALARM` in the manifest: fixed and verified with the app in the background.
+
+### Current Status
+
+Completed (reminders are delivered on time with the app in the background; Play Store distribution would need the alternative permission flow)

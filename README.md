@@ -32,7 +32,7 @@ npx expo run:android            # local build (Android SDK + JDK 17 required)
 npx eas-cli@latest build --profile development --platform android
 ```
 
-On Android 14 and newer, reminders can arrive up to about a minute late. To get exact timing, allow **Alarms & reminders** for the app in the system settings.
+Reminders use exact alarms: the app declares `USE_EXACT_ALARM`, which Android 13+ grants at install, and `SCHEDULE_EXACT_ALARM` for Android 12. Without exact alarms, some Android skins (seen on MIUI/HyperOS) hold reminders until the app is opened again. Note: Google Play only accepts `USE_EXACT_ALARM` for alarm-clock and calendar apps; an app published there would have to remove it and ask the user to allow **Alarms & reminders** instead.
 
 ## Checks
 
