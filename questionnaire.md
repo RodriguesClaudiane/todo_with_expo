@@ -7,6 +7,8 @@ You may use the coding agent to help investigate the project, but you must inspe
 Whenever possible, mention the relevant files, classes, functions, or components.
 
 ---
+Dupla: Claudiane Rodrigues e Joyce Kelly
+---
 
 ## 1. Project Structure
 
